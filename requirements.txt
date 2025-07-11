@@ -4,4 +4,5 @@ streamlit_option_menu
 python-dotenv
 langchain-core
 langchain-postgres
-psycopg2-binary
+#psycopg2-binary
+psycopg-binary
