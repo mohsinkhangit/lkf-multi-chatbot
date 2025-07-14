@@ -3,31 +3,31 @@
 # Exit immediately if a command exits with a non-zero status.
 set -e
 
-# Define the source path of the mounted secret and the target path Streamlit expects.
+# Define paths
 SECRET_MOUNT_PATH="/etc/secrets/secrets.toml"
 STREAMLIT_CONFIG_PATH="/app/.streamlit/secrets.toml"
 
-echo "Running entrypoint script..."
-echo "Checking if secret exists at ${SECRET_MOUNT_PATH}"
+echo "Running an improved entrypoint script..."
 
 # Check if the secret file exists at the mount path.
 if [ -f "$SECRET_MOUNT_PATH" ]; then
-    echo "Secret found. Creating .streamlit directory and copying the secret."
+    echo "Secret found at ${SECRET_MOUNT_PATH}. Preparing to copy."
 
-    # Create the .streamlit directory in the app's working directory.
-    # The -p flag ensures it doesn't fail if the directory already exists.
+    # Create the target directory. The -p flag is important.
     mkdir -p /app/.streamlit
 
-    # Copy the secret from the mount path to the location Streamlit requires.
-    cp "${SECRET_MOUNT_PATH}" "${STREAMLIT_CONFIG_PATH}"
+    # --- THE FIX ---
+    # Use 'cat' and I/O redirection instead of 'cp'.
+    # This reads the entire source file in one go and writes it to the destination,
+    # which is more resilient to the source file being replaced in the background.
+    cat "${SECRET_MOUNT_PATH}" > "${STREAMLIT_CONFIG_PATH}"
 
-    echo "Secret copied to ${STREAMLIT_CONFIG_PATH}"
+    echo "Secret successfully provisioned to ${STREAMLIT_CONFIG_PATH}"
 else
-    echo "Warning: Secret file not found at ${SECRET_MOUNT_PATH}. Streamlit will run without it."
-    # This branch is useful for local development where the secret isn't mounted.
+    echo "Warning: Secret file not found at ${SECRET_MOUNT_PATH}. Streamlit may not have auth features."
 fi
 
-# This is the crucial part:
-# It takes all the arguments that were passed to the entrypoint (e.g., "streamlit run app.py")
-# and executes them. This is what actually starts your Streamlit app.
+echo "Setup complete. Executing application..."
+
+# Execute the main command passed to the container (e.g., streamlit run...)
 exec "$@"
