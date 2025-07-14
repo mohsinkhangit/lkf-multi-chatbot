@@ -73,8 +73,6 @@ def new_chat_session():
     # We need to refresh the session list to show the "New Chat" session
     update_all_sessions()
 
-    st.rerun()
-
 
 def load_chat_session(session_data):
     """Loads a specific chat session from the database and refreshes the UI."""
