@@ -43,6 +43,7 @@ def generate_response(model_id: str, history_messages: list, grounding_source: b
     Returns:
         A string containing the generated response from the model.
     """
+    print(history_messages)
     model = model_id
 
     # --- THE MAIN CHANGE: Convert LangChain objects to Gemini's format ---
