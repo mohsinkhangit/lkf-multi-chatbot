@@ -10,6 +10,15 @@ st.set_page_config(
     page_icon="🤖",
     layout="wide"
 )
+st.markdown(
+        r"""
+        <style>
+        .stAppDeployButton {
+                visibility: hidden;
+            }
+        </style>
+        """, unsafe_allow_html=True
+    )
 
 # --- LOAD ENVIRONMENT VARIABLES ---
 load_dotenv()
@@ -24,7 +33,7 @@ GEMINI_MODELS = {
     "gemini-2.0-flash-lite-001": "gemini-2.0-flash-lite-001",
     "gemini-2.0-flash-001": "gemini-2.0-flash-001",
     "gemini-2.5-pro": "gemini-2.5-pro",
-    "gemini-1.5-flash": "Gemini 1.5 Flash"
+    "gemini-2.5-flash": "gemini-2.5-flash"
 }
 OPENAI_MODELS = {
     "GPT-4o": {"name": "gpt-4o", "deployment_name": "gpt-4o-2", "api_version": "2024-08-01-preview"},
