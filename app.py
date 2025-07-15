@@ -196,7 +196,8 @@ if selected_category:
     model_names = list(ALL_MODELS[selected_category].keys())
     selected_model_name = st.selectbox("Select Model", model_names)
     selected_model_id = selected_model_name  # Defaulting to name, adjust if needed for specific APIs
-
+    if selected_category == "Gemini":
+        grounding_source = st.checkbox("Enable Grounding Source: Google Search")
     prompt = st.chat_input("Say something")
 
     if prompt and 'processing_prompt' not in st.session_state:
@@ -227,7 +228,7 @@ if selected_category:
 
         with st.spinner(f"Getting response from {selected_model_name}..."):
             if selected_category == "Gemini":
-                assistant_content = gemini_module.generate_response(selected_model_id, history.messages)
+                assistant_content = gemini_module.generate_response(selected_model_id, history.messages, grounding_source=grounding_source)
             elif selected_category == "OpenAI":
                 assistant_content = openai_module.generate_response(selected_model_id, history.messages)
             else:
