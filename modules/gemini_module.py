@@ -1,10 +1,8 @@
 import os
-
 from google import genai
 from google.genai import types
 
 from langchain_core.messages import AIMessage, HumanMessage
-
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -15,7 +13,6 @@ GEMINI_TOKEN_LIMIT = {
     "gemini-2.5-pro": 65535,
     "gemini-2.5-flash": 65535
 }
-
 
 SAFETY_SETTINGS = [
     types.SafetySetting(
@@ -37,8 +34,6 @@ client = genai.Client(
         project=os.environ["GOOGLE_CLOUD_PROJECT"],
         location=os.environ["GOOGLE_CLOUD_REGION"],
     )
-
-
 def generate_response(model_id: str, history_messages: list, grounding_source: bool = False) -> str:
     """
     Generates a response from a Gemini model using LangChain message objects.
@@ -103,7 +98,6 @@ def generate_response(model_id: str, history_messages: list, grounding_source: b
     # --- BETTER DESIGN: Return only the result string ---
     # The calling function will be responsible for adding this to the history.
     return result
-
 
 def generate_topic_from_text(model, text):
     """Generates a concise topic/summary from a given text using Gemini."""

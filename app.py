@@ -1,8 +1,13 @@
 import os
 import streamlit as st
 from streamlit_option_menu import option_menu
-from langchain_core.messages import HumanMessage, AIMessage
+from langchain_core.messages import HumanMessage
 from dotenv import load_dotenv
+
+# --- MODULE IMPORTS ---
+from modules import gemini_module, openai_module
+from modules import session_manager_module as sm
+from modules import lc_memory_module
 
 # --- PAGE CONFIGURATION (MUST BE THE FIRST STREAMLIT COMMAND) ---
 st.set_page_config(
@@ -19,14 +24,19 @@ st.markdown(
         </style>
         """, unsafe_allow_html=True
     )
+st.markdown(
+        r"""
+        <style>
+        .stAppToolbar {
+                visibility: hidden;
+            }
+        </style>
+        """, unsafe_allow_html=True
+    )
 
 # --- LOAD ENVIRONMENT VARIABLES ---
 load_dotenv()
 
-# --- MODULE IMPORTS ---
-from modules import gemini_module
-from modules import session_manager_module as sm
-from modules import lc_memory_module
 
 # --- MODEL AND CONSTANT DEFINITIONS ---
 GEMINI_MODELS = {
@@ -36,16 +46,14 @@ GEMINI_MODELS = {
     "gemini-2.5-flash": "gemini-2.5-flash"
 }
 OPENAI_MODELS = {
-    "GPT-4o": {"name": "gpt-4o", "deployment_name": "gpt-4o-2", "api_version": "2024-08-01-preview"},
-    "GTP-4o-mini": {"name": "gpt-4o-mini", "deployment_name": "gpt-4o-mini", "api_version": "2024-08-01-preview"}
+    "gpt-4o": "gpt-4o",
+    "gpt-4o-mini": "gpt-4o-mini"
 }
+
 ALL_MODELS = {
     "Gemini": GEMINI_MODELS,
     "OpenAI": OPENAI_MODELS,
-    "DeepSeek": {"DeepSeek": "DeepSeek"},
-    "LLAMA": {"LLAMA": "LLAMA"},
 }
-
 
 # --- HELPER & CALLBACK FUNCTIONS ---
 
@@ -68,7 +76,6 @@ def _convert_messages_to_dict(messages) -> list[dict]:
     """Converts LangChain message objects to a list of dicts for display."""
     return [{"role": "user" if isinstance(m, HumanMessage) else "assistant", "content": m.content} for m in messages]
 
-
 def new_chat_session():
     """Initializes a new chat session for the currently logged-in user."""
     # --- CHANGE ---
@@ -82,7 +89,6 @@ def new_chat_session():
     # We need to refresh the session list to show the "New Chat" session
     update_all_sessions()
 
-
 def load_chat_session(session_data):
     """Loads a specific chat session from the database and refreshes the UI."""
     st.session_state.current_session_id = session_data["session_id"]
@@ -90,7 +96,6 @@ def load_chat_session(session_data):
     history = lc_memory_module.get_chat_history(session_data["session_id"])
     st.session_state.messages = _convert_messages_to_dict(history.messages)
     st.rerun()
-
 
 def delete_chat_session(session_id: str):
     """Deletes a chat session and its history, then reloads the UI."""
@@ -107,7 +112,6 @@ def update_all_sessions():
     """Fetches and updates the list of all chat sessions in session state."""
     user_email = st.user.email
     st.session_state.all_sessions = sm.get_sessions_for_user_db(user_id=user_email)
-
 
 # ----------------------------------
 # --- MAIN APPLICATION LOGIC ---
@@ -200,7 +204,13 @@ if selected_category:
 
         if not st.session_state.get("messages"):
             with st.spinner("Generating chat topic..."):
-                topic = gemini_module.generate_topic_from_text(selected_model_id, prompt)
+                if selected_category == "Gemini":
+                    topic = gemini_module.generate_topic_from_text(selected_model_id, prompt)
+                elif selected_category == "OpenAI":
+                    topic = openai_module.generate_topic_from_text(selected_model_id, prompt)
+                else:
+                    st.error("Unsupported model category selected.")
+                    topic = None
                 if topic and topic != "Untitled Conversation":
                     sm.update_session_topic_db(st.session_state.current_session_id, topic)
                     st.session_state.current_session_topic = topic
@@ -216,7 +226,13 @@ if selected_category:
             st.markdown(current_prompt)
 
         with st.spinner(f"Getting response from {selected_model_name}..."):
-            assistant_content = gemini_module.generate_response(selected_model_id, history.messages)
+            if selected_category == "Gemini":
+                assistant_content = gemini_module.generate_response(selected_model_id, history.messages)
+            elif selected_category == "OpenAI":
+                assistant_content = openai_module.generate_response(selected_model_id, history.messages)
+            else:
+                st.error("Unsupported model category selected.")
+                assistant_content = None
             if assistant_content:
                 history.add_ai_message(assistant_content)
                 with st.chat_message("assistant"):
