@@ -63,7 +63,6 @@ def generate_response(model_id: str, history_messages: list, grounding_source: b
         else:
             # Skip unsupported message types to avoid errors
             continue
-
         contents.append(
             genai.types.Content(
                 role=role,
@@ -73,21 +72,29 @@ def generate_response(model_id: str, history_messages: list, grounding_source: b
     document_content = []
     if processed_files:
         for file in processed_files:
-            # Assuming file is a dictionary with 'name' and 'content' keys
-            if file['file_type'] == 'image_url':
-                try:
-                    document_content.append(types.Part.from_bytes(
-                        data=base64.b64decode(file['content']),
-                        mime_type=file['mime_type'],
-                    ))
-                except Exception as e:
-                    print(f"Error decoding base64 image: {e} for file {file.get('content', 'unknown')}")
-                    document_content.append(
-                        genai.types.Part.from_text(f"[Error processing image: {file.get('source_file')}]"))
+            document_content.append(
+                genai.types.Part.from_uri(
+                    file_uri=file['gcs_uri'],
+                    mime_type=file['mime_type']
+                )
+            )
 
-            elif file['file_type'] == 'document_text':
-                document_content.append(genai.types.Part.from_text(
-                    text=f"Content from {file.get('source_file', 'document')}: \n" + file["content"]))
+        # for file in processed_files:
+        #     # Assuming file is a dictionary with 'name' and 'content' keys
+        #     if file['file_type'] == 'image_url':
+        #         try:
+        #             document_content.append(types.Part.from_bytes(
+        #                 data=base64.b64decode(file['content']),
+        #                 mime_type=file['mime_type'],
+        #             ))
+        #         except Exception as e:
+        #             print(f"Error decoding base64 image: {e} for file {file.get('content', 'unknown')}")
+        #             document_content.append(
+        #                 genai.types.Part.from_text(f"[Error processing image: {file.get('source_file')}]"))
+        #
+        #     elif file['file_type'] == 'document_text':
+        #         document_content.append(genai.types.Part.from_text(
+        #             text=f"Content from {file.get('source_file', 'document')}: \n" + file["content"]))
 
         if document_content:
             # Add the document content as a separate user message
