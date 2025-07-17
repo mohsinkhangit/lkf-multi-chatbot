@@ -1,80 +1,67 @@
-# gc_store_manager.py
-
 import os
+
 import streamlit as st
 from google.cloud import storage
-import datetime
-import pytz
-
+import google.auth
+from google.auth import impersonated_credentials
+# Load environment variables from .env file
+import datetime # Import datetime module
+import pytz     # Recommended for timezone-aware datetimes (pip install pytz)
 # --- Configuration ---
-GCS_BUCKET_NAME = os.environ.get("GCS_BUCKET_NAME")
-if not GCS_BUCKET_NAME:
-    st.error("FATAL ERROR: GCS_BUCKET_NAME environment variable is not set.")
-    st.stop()
+from dotenv import load_dotenv
+load_dotenv()
 
+# Configure how long signed URLs are valid (e.g., 5 minutes for demonstration)
+# For production, adjust based on security needs.
 SIGNED_URL_DURATION_SECONDS = 3000  # 50 minutes
+SERVICE_ACCOUNT_EMAIL = os.environ.get('SERVICE_ACCOUNT_EMAIL','')
 
-def get_service_account_email():
+# --- Function to Upload File to GCS ---
+def upload_file_to_gcs(uploaded_file, bucket_name):
     """
-    Retrieves the service account email from the GCP metadata server.
-    This is the standard way to get it when running on Cloud Run/Functions/GCE.
+    Uploads a file-like object to a Google Cloud Storage bucket
+    and returns its GCS URI and a temporary signed URL for display.
     """
-    import requests
     try:
-        url = "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/email"
-        headers = {"Metadata-Flavor": "Google"}
-        response = requests.get(url, headers=headers, timeout=5)
-        response.raise_for_status()  # Raise an exception for bad status codes
-        return response.text
-    except Exception:
-        # This will fail when running locally without the metadata server.
-        # It's intended to work inside the Cloud Run environment.
-        return None
-
-
-# Attempt to get the service account email once
-SERVICE_ACCOUNT_EMAIL = get_service_account_email()
-
-
-def upload_file_to_gcs(uploaded_file, username):
-    """
-    Uploads a file to GCS and returns its URI and a signed URL.
-    This version is optimized for Cloud Run environments.
-    """
-    if not SERVICE_ACCOUNT_EMAIL:
-        st.error("Could not determine service account email. Cannot generate signed URL.")
-        print("ERROR: Service account email could not be retrieved from metadata server.")
-        return None, None
-
-    try:
-        # 1. Initialize client. It will use Application Default Credentials automatically.
+        # Initialize a client (automatically uses Application Default Credentials)
         client = storage.Client()
-        bucket = client.bucket(GCS_BUCKET_NAME)
-
-        blob_name = f"{username}/{uploaded_file.name}"
-        blob = bucket.blob(blob_name)
-
-        # 2. Upload the file
-        uploaded_file.seek(0)
-        blob.upload_from_file(uploaded_file, content_type=uploaded_file.type)
-
-        gcs_uri = f"gs://{GCS_BUCKET_NAME}/{blob_name}"
-
-        # 3. Generate the signed URL using the IAM API
-        # The library now handles this correctly when the service account email is provided.
-        expiration_time = datetime.datetime.now(pytz.utc) + datetime.timedelta(seconds=SIGNED_URL_DURATION_SECONDS)
-
-        display_url = blob.generate_signed_url(
-            version="v4",
-            expiration=expiration_time,
-            method='GET',
-            service_account_email=SERVICE_ACCOUNT_EMAIL  # This is the key
+        credentials, project = google.auth.default()
+        signing_credentials = impersonated_credentials.Credentials(
+            source_credentials=credentials,
+            target_principal=SERVICE_ACCOUNT_EMAIL,
+            target_scopes="https://www.googleapis.com/auth/devstorage.read_only",
+            lifetime=2,
         )
+        bucket = client.bucket(bucket_name)
+
+        # Create a blob (object) name. Using the original filename for simplicity.
+        # For real-world applications, consider adding a unique prefix (e.g., timestamp, user ID)
+        # to prevent overwrites or organize files better.
+        # upload to a subdirectory if needed, e.g., "uploads/"
+        # For example, to upload to a subdirectory:
+        # Pass the datetime object
+        blob = bucket.blob(f"Mohsin/{uploaded_file.name}")
+        # blob = bucket.blob(uploaded_file.name)
+
+        # Upload the file's content
+        # Streamlit's uploaded_file object behaves like a file-like object,
+        # so blob.upload_from_file() can read directly from it.
+        blob.upload_from_file(uploaded_file)
+
+        # Construct the Google Cloud Storage URI
+        gcs_uri = f"gs://{bucket_name}/{uploaded_file.name}"
+
+        # Generate a temporary, time-limited signed URL for viewing the object.
+        # This is recommended for private buckets, allowing temporary access.
+        # The service account or user credentials must have 'Storage Object Viewer' role.
+        expiration_time = datetime.datetime.now(pytz.utc) + datetime.timedelta(seconds=SIGNED_URL_DURATION_SECONDS)
+        file_display_url = blob.generate_signed_url(expiration=expiration_time,
+                                                    method='GET',
+                                                    credentials=signing_credentials)
+    # file_display_url = blob.generate_signed_url(expiration=SIGNED_URL_DURATION_SECONDS, method='GET')
 
         st.success(f"✅ Successfully uploaded `{uploaded_file.name}`.")
-        return gcs_uri, display_url
-
+        return gcs_uri, file_display_url
     except Exception as e:
-        st.error(f"❌ Error during GCS operation: {e}")
-        print(f"Error uploading file {uploaded_file.name}: {e}")
+        st.error(f"❌ Error uploading `{uploaded_file.name}`: {e}")
         return None, None
