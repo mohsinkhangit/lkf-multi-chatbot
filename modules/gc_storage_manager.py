@@ -13,11 +13,14 @@ load_dotenv()
 
 # Configure how long signed URLs are valid (e.g., 5 minutes for demonstration)
 # For production, adjust based on security needs.
+
+GCS_BUCKET_NAME = os.environ("GCS_BUCKET_NAME", "your-default-bucket-name")  # Replace with your GCS bucket name
+
 SIGNED_URL_DURATION_SECONDS = 3000  # 50 minutes
 SERVICE_ACCOUNT_EMAIL = os.environ.get('SERVICE_ACCOUNT_EMAIL','')
 
 # --- Function to Upload File to GCS ---
-def upload_file_to_gcs(uploaded_file, bucket_name):
+def upload_file_to_gcs(uploaded_file, username):
     """
     Uploads a file-like object to a Google Cloud Storage bucket
     and returns its GCS URI and a temporary signed URL for display.
@@ -32,7 +35,7 @@ def upload_file_to_gcs(uploaded_file, bucket_name):
             target_scopes="https://www.googleapis.com/auth/devstorage.read_only",
             lifetime=2,
         )
-        bucket = client.bucket(bucket_name)
+        bucket = client.bucket(GCS_BUCKET_NAME)
 
         # Create a blob (object) name. Using the original filename for simplicity.
         # For real-world applications, consider adding a unique prefix (e.g., timestamp, user ID)
@@ -40,7 +43,7 @@ def upload_file_to_gcs(uploaded_file, bucket_name):
         # upload to a subdirectory if needed, e.g., "uploads/"
         # For example, to upload to a subdirectory:
         # Pass the datetime object
-        blob = bucket.blob(f"Mohsin/{uploaded_file.name}")
+        blob = bucket.blob(f"{username}/{uploaded_file.name}")
         # blob = bucket.blob(uploaded_file.name)
 
         # Upload the file's content
@@ -49,7 +52,7 @@ def upload_file_to_gcs(uploaded_file, bucket_name):
         blob.upload_from_file(uploaded_file)
 
         # Construct the Google Cloud Storage URI
-        gcs_uri = f"gs://{bucket_name}/{uploaded_file.name}"
+        gcs_uri = f"gs://{GCS_BUCKET_NAME}/{uploaded_file.name}"
 
         # Generate a temporary, time-limited signed URL for viewing the object.
         # This is recommended for private buckets, allowing temporary access.
