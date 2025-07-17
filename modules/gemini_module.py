@@ -79,32 +79,6 @@ def generate_response(model_id: str, history_messages: list, grounding_source: b
                 )
             )
 
-        # for file in processed_files:
-        #     # Assuming file is a dictionary with 'name' and 'content' keys
-        #     if file['file_type'] == 'image_url':
-        #         try:
-        #             document_content.append(types.Part.from_bytes(
-        #                 data=base64.b64decode(file['content']),
-        #                 mime_type=file['mime_type'],
-        #             ))
-        #         except Exception as e:
-        #             print(f"Error decoding base64 image: {e} for file {file.get('content', 'unknown')}")
-        #             document_content.append(
-        #                 genai.types.Part.from_text(f"[Error processing image: {file.get('source_file')}]"))
-        #
-        #     elif file['file_type'] == 'document_text':
-        #         document_content.append(genai.types.Part.from_text(
-        #             text=f"Content from {file.get('source_file', 'document')}: \n" + file["content"]))
-
-        if document_content:
-            # Add the document content as a separate user message
-            contents.append(
-                genai.types.Content(
-                    role="user",
-                    parts=document_content
-                )
-            )
-    # Tool configuration remains the same
     tools = [genai.types.Tool(google_search=genai.types.GoogleSearch())] if grounding_source else None
 
     generate_content_config = genai.types.GenerateContentConfig(
@@ -117,27 +91,20 @@ def generate_response(model_id: str, history_messages: list, grounding_source: b
     )
     result_string = ""
     try:
-        response = client.models.generate_content(
+        for chunk in client.models.generate_content_stream(
             model=model,
             contents=contents,  # Use the trimmed/prepared contents
             config=generate_content_config
-        )
+        ):
         # Stream response and accumulate text
-        result_string = response.text
-        # After streaming completes, get token usage from the response_stream object itself
-        # This access to .usage_metadata is per the Gemini API docs for stream responses.
-        if hasattr(response, 'usage_metadata'):
-            # prompt_token_count is the input tokens actually used for the generation
-            # candidates_token_count is the output tokens generated
-            output_tokens_generated = response.usage_metadata.candidates_token_count
-            # Note: response_stream.usage_metadata.prompt_token_count should match final_input_tokens here.
-            # We'll use our calculated final_input_tokens for consistency with trimming logic.
+            if not chunk.candidates or not chunk.candidates[0].content.parts:
+                continue
+            yield chunk.text
 
     except Exception as e:
         print(f"An error occurred during Gemini content generation: {e}")
-        return f"Error during generation: {e}" # Return initial input tokens in case of early error
+        yield f"Error during generation: {e}"
 
-    return result_string
 
 def generate_topic_from_text(model, text):
     """Generates a concise topic/summary from a given text using Gemini."""

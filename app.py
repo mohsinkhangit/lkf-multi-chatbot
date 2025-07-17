@@ -4,9 +4,6 @@ from streamlit_option_menu import option_menu
 from langchain_core.messages import HumanMessage  # Correct import for LangChain messages
 from dotenv import load_dotenv
 
-import base64  # Not directly used in the optimized _process_uploaded_file, but kept if other parts need it
-from pypdf import PdfReader  # For potential future PDF content extraction, not used for thumbnail here
-import io  # Not directly used in the optimized _process_uploaded_file, but kept if other parts need it
 
 # PIL for local image previews
 from PIL import Image
@@ -249,10 +246,7 @@ st.subheader(f"Current Chat: {st.session_state.current_session_topic}")
 # Display chat messages from history
 for message in st.session_state.get("messages", []):
     with st.chat_message(message["role"]):
-        # Messages from _convert_messages_to_dict are already Markdown strings for display
         st.markdown(message["content"])
-        # If storing multimodal full details in history, adjust this to iterate over content list
-        # For now, it assumes _convert_messages_to_dict flattens multimodal for display
 
 # --- SIDEBAR ---
 with st.sidebar:
@@ -302,7 +296,6 @@ if selected_category:
     grounding_source = False
     if selected_category == "Gemini":
         grounding_source = st.checkbox("Enable Grounding Source: Google Search")
-    # For OpenAI or other models, add their specific options here if needed.
 
     # --- File Upload Section ---
     st.markdown("---")  # Visual separator
@@ -336,7 +329,6 @@ if selected_category:
     # --- Text Chat Input (Submission Trigger) ---
     user_text_prompt = st.chat_input("Say something")
 
-    # This 'if prompt:' statement now acts as the sole trigger for processing.
     if user_text_prompt:  # The entire prompt submission logic starts here
 
         # Store the current input (text and files) into a dedicated processing state
@@ -344,16 +336,13 @@ if selected_category:
             "prompt": user_text_prompt,
             "files": st.session_state.uploaded_files_queue  # Get all files currently in queue
         }
-        # Immediately clear the queue since they are now attached to the prompt
         st.session_state.uploaded_files_queue = []
-        # No rerun here, let the script continue to process the prompt
 
         # --- EXECUTE PROCESSING ---
         current_input_data_for_llm = st.session_state.processing_prompt_and_file
         current_text_prompt_for_llm = current_input_data_for_llm["prompt"]
-        raw_files_for_llm = current_input_data_for_llm["files"]  # These are the Streamlit UploadedFile objects
+        raw_files_for_llm = current_input_data_for_llm["files"]
 
-        # Prepare processed file content for LLM calls (will be passed separately)
         processed_file_metadata = []  # This will store GCS URIs, display URLs, etc.
 
         # Process and upload files to GCS at submission time
@@ -366,7 +355,6 @@ if selected_category:
                     else:
                         st.error(f"Skipping file '{file_obj.name}' due to processing/upload error.")
 
-        # Display user's input and attached files in chat history BEFORE LLM call
         with st.chat_message("user"):
             if current_text_prompt_for_llm:
                 st.markdown(current_text_prompt_for_llm)
@@ -393,11 +381,9 @@ if selected_category:
         if is_first_message_in_new_chat:
             with st.spinner("Generating chat topic..."):
                 topic_text_for_generation = current_text_prompt_for_llm if current_text_prompt_for_llm else f"New chat with file(s)"
-                # Ensure the topic generation functions can handle empty text if only files are present
                 if selected_category == "Gemini":
                     topic = gemini_module.generate_topic_from_text(selected_model_id, topic_text_for_generation)
                 elif selected_category == "OpenAI":
-                    # Assuming openai_module.generate_topic_from_text exists and works similarly
                     topic = openai_module.generate_topic_from_text(selected_model_id, topic_text_for_generation)
                 else:
                     topic = "Untitled Chat"  # Fallback
@@ -406,19 +392,6 @@ if selected_category:
                     sm.update_session_topic_db(st.session_state.current_session_id, topic)
                     st.session_state.current_session_topic = topic
                     update_all_sessions()
-                    # No st.rerun() here, let it continue down to LLM call
-
-        # Add the current user's text message AND file metadata to history
-        # History should store enough info to reconstruct the display (text + processed_file_metadata)
-        # Assuming lc_memory_module's add_user_message can take a list of parts for multimodal content
-        # Or, you might store the parts separately in your message content.
-        # For simplicity, if your LLM expects the file content separate, keep history text-centric.
-        # The current design passes `processed_files` *separately* to `generate_response`.
-        # So, the history only needs the text prompt.
-
-        # However, for display in `_convert_messages_to_dict`, if you want to show the file info
-        # from history, you need `processed_file_metadata` to be part of the `messages` content.
-        # Let's adjust where data is stored for messages.
 
         # New approach: store combined content for history
         full_user_message_content = []
@@ -435,19 +408,18 @@ if selected_category:
             st.session_state.messages = _convert_messages_to_dict(history_manager.messages)
             st.rerun()
 
-            # Generate response from selected model
         with st.spinner(f"Getting response from {selected_model_name}..."):
-            assistant_content = ""
+            assistant_content_generator = None # Initialize to None for clarity
             # Pass processed_file_metadata containing GCS URIs, display URLs etc.
             if selected_category == "Gemini":
-                assistant_content = gemini_module.generate_response(
+                assistant_content_generator = gemini_module.generate_response(
                     selected_model_id,
                     history_manager.messages,  # History will now contain text + file metadata for display
                     processed_files=processed_file_metadata,  # Files passed separately for LLM processing
                     grounding_source=grounding_source
                 )
             elif selected_category == "OpenAI":
-                assistant_content = openai_module.generate_response(
+                assistant_content_generator = openai_module.generate_response(
                     # Ensure this function also accepts processed_files
                     selected_model_id,
                     history_manager.messages,
@@ -457,15 +429,15 @@ if selected_category:
                 st.warning(f"Response generation not implemented for {selected_category} models.")
                 assistant_content = "Sorry, this model category is not yet supported for responses."
 
-            if assistant_content:
-                history_manager.add_ai_message(assistant_content)
+            if assistant_content_generator:
                 with st.chat_message("assistant"):
-                    st.markdown(assistant_content)
+                    full_response_text = st.write_stream(assistant_content_generator)
+                    # st.markdown(assistant_content)
+                history_manager.add_ai_message(full_response_text)
             else:
                 st.error("The model did not return a response.")
 
         # Clear processing state and refresh UI
         del st.session_state['processing_prompt_and_file']
-        # IMPORTANT: Refresh the session messages from history after AI response
         st.session_state.messages = _convert_messages_to_dict(history_manager.messages)
         st.rerun()  # Final rerun to update chat UI

@@ -1,4 +1,5 @@
 import os
+import asyncio
 from openai import AzureOpenAI
 
 # from langchain_core.messages import AIMessage, HumanMessage
@@ -28,13 +29,15 @@ client = AzureOpenAI(
 )
 
 
-def generate_response(model_id: str, history_messages: list, grounding_source: bool = False) -> str:
+def generate_response(model_id: str, history_messages: list, processed_files: list = [],
+                      grounding_source: bool = False) -> str:
     """
     Generates a response from a Gemini model using LangChain message objects.
 
     Args:
         model_id: The ID of the Gemini model to use.
-        history_messages: A list of LangChain BaseMessage objects (HumanMessage, AIMessage).
+        history_messages: A list of LangChain BaseMessage objects (HumanMessage, AIMessage)
+        processed_files: A list of file metadata to include in the response.
         grounding_source: Whether to enable Google Search grounding.
 
     Returns:
@@ -86,16 +89,24 @@ def generate_response(model_id: str, history_messages: list, grounding_source: b
         else:
             # Skip unsupported message types to avoid errors
             continue
-    response = client.chat.completions.create(
-        messages=messages,
-        max_tokens=max_tokens,
-        temperature=1.0,
-        top_p=1.0,
-        model=model_deployment_name
-    )
-    result = response.choices[0].message.content
-    print(result)
-    return result
+    try:
+        response_stream = client.chat.completions.create(
+            messages=messages,
+            max_tokens=max_tokens,
+            temperature=1.0,
+            top_p=1.0,
+            model=model_deployment_name,
+            stream=True  # Crucial for streaming
+        )
+
+        for chunk in response_stream:
+            # Check if there's content in the chunk and yield it
+            if chunk.choices and chunk.choices[0].delta.content is not None:
+                yield chunk.choices[0].delta.content
+
+    except Exception as e:
+        print(f"An error occurred during OpenAI content generation: {e}")
+        yield f"Error during generation: {e}"  # Yield an error message if an exception occurs
 
 
 def generate_topic_from_text(model_id, text):
