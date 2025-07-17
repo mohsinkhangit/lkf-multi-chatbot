@@ -90,6 +90,14 @@ def generate_response(model_id: str, history_messages: list, grounding_source: b
                     mime_type=file['mime_type']
                 )
             )
+        if document_content:
+            # Add the document content as a separate user message
+            contents.append(
+                genai.types.Content(
+                    role="user",
+                    parts=document_content
+                )
+            )
 
     tools = [genai.types.Tool(google_search=genai.types.GoogleSearch())] if grounding_source else None
 
