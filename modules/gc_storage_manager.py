@@ -54,4 +54,5 @@ def upload_file_to_gcs(uploaded_file, username):
         return gcs_uri, file_display_url
     except Exception as e:
         st.error(f"❌ Error uploading `{uploaded_file.name}`: {e}")
-        return None, None
+        print(f"Error uploading file {uploaded_file.name}: {e}")  # Log the error for debugging
+        None, None  # Return None if upload fails
