@@ -10,3 +10,5 @@ Authlib>=1.3.2
 langchain-openai
 pypdf
 google-cloud-storage
+oogle-auth >= 2.17.0
+google-cloud-logging

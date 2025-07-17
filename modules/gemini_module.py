@@ -3,11 +3,17 @@ import logging
 import base64
 from google import genai
 from google.genai import types
+import google.cloud.logging
+
+# Instantiates a client
+client = google.cloud.logging.Client()
+
+# Connects the Cloud Logging handler to the root logger
+client.setup_logging()
 
 from langchain_core.messages import AIMessage, HumanMessage
 from dotenv import load_dotenv
 
-_logger = logging.getLogger(__name__)
 
 load_dotenv()
 
@@ -53,9 +59,9 @@ def generate_response(model_id: str, history_messages: list, grounding_source: b
     Returns:
         A string containing the generated response from the model.
     """
-    _logger.info("Generating response with model: %s", model_id)
-    _logger.info("History messages %s", history_messages)
-    _logger.info("Processed files: %s", processed_files)
+    logging.info("Generating response with model: %s", model_id)
+    logging.info("History messages %s", history_messages)
+    logging.info("Processed files: %s", processed_files)
 
     model = model_id
     # --- THE MAIN CHANGE: Convert LangChain objects to Gemini's format ---
