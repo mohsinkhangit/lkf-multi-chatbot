@@ -14,7 +14,7 @@ load_dotenv()
 # Configure how long signed URLs are valid (e.g., 5 minutes for demonstration)
 # For production, adjust based on security needs.
 
-GCS_BUCKET_NAME = os.environ("GCS_BUCKET_NAME", "your-default-bucket-name")  # Replace with your GCS bucket name
+GCS_BUCKET_NAME = os.environ.get("GCS_BUCKET_NAME", "your-default-bucket-name")  # Replace with your GCS bucket name
 
 SIGNED_URL_DURATION_SECONDS = 3000  # 50 minutes
 SERVICE_ACCOUNT_EMAIL = os.environ.get('SERVICE_ACCOUNT_EMAIL','')
