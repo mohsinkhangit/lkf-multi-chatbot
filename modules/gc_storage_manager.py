@@ -3,62 +3,78 @@
 import os
 import streamlit as st
 from google.cloud import storage
-from dotenv import load_dotenv
 import datetime
 import pytz
-import google.auth  # Import the google.auth library
 
-load_dotenv()
+# --- Configuration ---
+GCS_BUCKET_NAME = os.environ.get("GCS_BUCKET_NAME")
+if not GCS_BUCKET_NAME:
+    st.error("FATAL ERROR: GCS_BUCKET_NAME environment variable is not set.")
+    st.stop()
 
-GCS_BUCKET_NAME = os.environ.get("GCS_BUCKET_NAME", "")
 SIGNED_URL_DURATION_SECONDS = 3000  # 50 minutes
+
+def get_service_account_email():
+    """
+    Retrieves the service account email from the GCP metadata server.
+    This is the standard way to get it when running on Cloud Run/Functions/GCE.
+    """
+    import requests
+    try:
+        url = "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/email"
+        headers = {"Metadata-Flavor": "Google"}
+        response = requests.get(url, headers=headers, timeout=5)
+        response.raise_for_status()  # Raise an exception for bad status codes
+        return response.text
+    except Exception:
+        # This will fail when running locally without the metadata server.
+        # It's intended to work inside the Cloud Run environment.
+        return None
+
+
+# Attempt to get the service account email once
+SERVICE_ACCOUNT_EMAIL = get_service_account_email()
 
 
 def upload_file_to_gcs(uploaded_file, username):
     """
-    Uploads a file-like object to a Google Cloud Storage bucket
-    and returns its GCS URI and a temporary signed URL for display.
+    Uploads a file to GCS and returns its URI and a signed URL.
+    This version is optimized for Cloud Run environments.
     """
-    try:
-        # Get the default credentials and the service account email
-        # This will automatically work on Cloud Run and other GCP environments
-        credentials, project_id = google.auth.default()
+    if not SERVICE_ACCOUNT_EMAIL:
+        st.error("Could not determine service account email. Cannot generate signed URL.")
+        print("ERROR: Service account email could not be retrieved from metadata server.")
+        return None, None
 
-        # Initialize the client with the discovered credentials.
-        # This makes it explicit but is often not required if GOOGLE_APPLICATION_CREDENTIALS is not set.
-        client = storage.Client(credentials=credentials)
+    try:
+        # 1. Initialize client. It will use Application Default Credentials automatically.
+        client = storage.Client()
         bucket = client.bucket(GCS_BUCKET_NAME)
 
         blob_name = f"{username}/{uploaded_file.name}"
         blob = bucket.blob(blob_name)
 
-        # Rewind the file stream before uploading
+        # 2. Upload the file
         uploaded_file.seek(0)
-
-        # Upload the file's content from the stream
         blob.upload_from_file(uploaded_file, content_type=uploaded_file.type)
 
-        # Construct the Google Cloud Storage URI
         gcs_uri = f"gs://{GCS_BUCKET_NAME}/{blob_name}"
 
-        # --- THIS IS THE CRITICAL FIX ---
-        # Generate a signed URL using the IAM API by providing the service account email.
-        # This requires the service account to have the 'Service Account Token Creator' role.
+        # 3. Generate the signed URL using the IAM API
+        # The library now handles this correctly when the service account email is provided.
         expiration_time = datetime.datetime.now(pytz.utc) + datetime.timedelta(seconds=SIGNED_URL_DURATION_SECONDS)
 
-        file_display_url = blob.generate_signed_url(
+        display_url = blob.generate_signed_url(
             version="v4",
             expiration=expiration_time,
             method='GET',
-            service_account_email=credentials.service_account_email,  # Use the discovered service account
-            access_token=credentials.token  # Pass the token for authentication
+            service_account_email=SERVICE_ACCOUNT_EMAIL  # This is the key
         )
 
         st.success(f"✅ Successfully uploaded `{uploaded_file.name}`.")
-        return gcs_uri, file_display_url
+        return gcs_uri, display_url
 
     except Exception as e:
-        st.error(f"❌ Error uploading `{uploaded_file.name}`: {e}")
+        st.error(f"❌ Error during GCS operation: {e}")
         print(f"Error uploading file {uploaded_file.name}: {e}")
-        # Make sure to return a tuple of Nones to prevent the TypeError
         return None, None
