@@ -1,13 +1,14 @@
 import os
+import logging
+import datetime # Import datetime module
+import pytz
 
-import streamlit as st
-from google.cloud import storage
 import google.auth
 from google.auth import impersonated_credentials
-# Load environment variables from .env file
-import datetime # Import datetime module
-import pytz     # Recommended for timezone-aware datetimes (pip install pytz)
-# --- Configuration ---
+from google.cloud import storage
+
+_logger = logging.getLogger(__name__)
+
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -63,8 +64,13 @@ def upload_file_to_gcs(uploaded_file, username):
                                                     credentials=signing_credentials)
     # file_display_url = blob.generate_signed_url(expiration=SIGNED_URL_DURATION_SECONDS, method='GET')
 
-        st.success(f"✅ Successfully uploaded `{uploaded_file.name}`.")
+        # st.success(f"✅ Successfully uploaded `{uploaded_file.name}`.")
+        _logger.info("Successfully uploaded %s to GCS bucket %s", uploaded_file.name, GCS_BUCKET_NAME)
+        _logger.info("Generated signed URL: %s", file_display_url)
+        _logger.info("GCS URI: %s", gcs_uri)
+        # st.write(f"File available at: {file_display_url}")
         return gcs_uri, file_display_url
     except Exception as e:
-        st.error(f"❌ Error uploading `{uploaded_file.name}`: {e}")
+        # st.error(f"❌ Error uploading `{uploaded_file.name}`: {e}")
+        print(f"Error uploading {uploaded_file.name}: {e}")
         return None, None

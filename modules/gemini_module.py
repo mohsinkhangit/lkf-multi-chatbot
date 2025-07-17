@@ -1,10 +1,13 @@
 import os
+import logging
 import base64
 from google import genai
 from google.genai import types
 
 from langchain_core.messages import AIMessage, HumanMessage
 from dotenv import load_dotenv
+
+_logger = logging.getLogger(__name__)
 
 load_dotenv()
 
@@ -50,7 +53,10 @@ def generate_response(model_id: str, history_messages: list, grounding_source: b
     Returns:
         A string containing the generated response from the model.
     """
-    print(history_messages)
+    _logger.info("Generating response with model: %s", model_id)
+    _logger.info("History messages %s", history_messages)
+    _logger.info("Processed files: %s", processed_files)
+
     model = model_id
     # --- THE MAIN CHANGE: Convert LangChain objects to Gemini's format ---
     contents = []
@@ -89,7 +95,6 @@ def generate_response(model_id: str, history_messages: list, grounding_source: b
         safety_settings=SAFETY_SETTINGS,
         tools=tools
     )
-    result_string = ""
     try:
         for chunk in client.models.generate_content_stream(
             model=model,
