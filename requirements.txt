@@ -9,3 +9,4 @@ psycopg-binary
 Authlib>=1.3.2
 langchain-openai
 pypdf
+google-cloud-storage
