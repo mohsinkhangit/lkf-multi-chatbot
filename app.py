@@ -1,19 +1,18 @@
 import os
+import uuid
 import streamlit as st
 from streamlit_option_menu import option_menu
-from langchain_core.messages import HumanMessage  # Correct import for LangChain messages
+from langchain_core.messages import HumanMessage
 from dotenv import load_dotenv
 
-
-# PIL for local image previews
+# PIL for local image previews (used in _display_queued_file_preview)
 from PIL import Image
 
 # --- MODULE IMPORTS (ensure all are present) ---
 from modules import gemini_module, openai_module
 from modules import session_manager_module as sm
 from modules import lc_memory_module
-from modules.gc_storage_manager import upload_file_to_gcs  # This is used for GCS upload
-from modules.db_connection_manager import get_db_connection  # Kept if used elsewhere
+from modules.gc_storage_manager import upload_file_to_gcs
 
 # --- PAGE CONFIGURATION (MUST BE THE FIRST STREAMLIT COMMAND) ---
 st.set_page_config(
@@ -22,15 +21,114 @@ st.set_page_config(
     layout="wide"
 )
 
-# Hide Streamlit's default UI elements for a cleaner look
+# --- CUSTOM CSS FOR UI/UX IMPROVEMENTS ---
 st.markdown(
-    r"""
+    """
     <style>
+    /* Hide Streamlit's deploy button and toolbar for a cleaner look */
     .stAppDeployButton { visibility: hidden; }
     .stAppToolbar { visibility: hidden; }
+
+    /* --- General Font Size and Spacing Adjustments --- */
+    /* You can adjust the base font size for the whole app if desired */
+    html, body, .stApp {
+        font-size: 15px; /* Slightly smaller base font size for better density */
+    }
+
+    /* Global line height for better readability if font size changed */
+    p {
+        line-height: 1.5;
+    }
+
+    /* --- Buttons: Affects "New Chat", "Log out", "Delete" (trash can) etc. --- */
+    /* Target the actual button element within Streamlit's button container */
+    .stButton > button {
+        font-size: 0.9em; /* Make button text/icons slightly smaller */
+        padding: 0.4em 0.8em; /* Adjust padding for smaller buttons */
+        line-height: 1.2; /* Tighter line spacing for button content */
+    }
+
+    /* --- Streamlit Option Menu in Sidebar ("Gemini", "OpenAI") --- */
+    /* Target the nav-link div for overall item appearance */
+    .css-1fpy3qf.eql387c3 div.nav-link { /* This class is often used for nav-link. Inspect if it changes. */
+        font-size: 0.95em; /* Adjust font size of menu item text */
+        padding: 0.5em 1em; /* Adjust padding for menu items */
+    }
+    /* Target the icon part within option menu items (e.g., "✨", "🤖"). */
+    /* These are commonly SVG or spans that are first children of a div within .nav-link */
+    .nav-link > div > svg, /* For cases where icons are SVG */
+    .nav-link > div > span:first-child { /* For unicode icons or spans */
+        font-size: 1.1em; /* Make the actual icons in the menu slightly smaller relative to text */
+        margin-right: 0.5em; /* Adjust space between icon and text */
+        vertical-align: middle; /* Align icon vertically with text */
+    }
+
+    /* --- File Uploader Widget Icons --- */
+    /* Target the main cloud upload icon within the st.file_uploader area */
+    .stFileUploader svg { /* This targets SVGs inside the file uploader */
+        width: 25px; /* Adjust the main upload icon size */
+        height: 25px;
+        fill: grey; /* Optional: adjust icon color */
+    }
+    /* Target the text indicating "Drag and drop file here or Browse files" */
+    .stFileUploader span[data-testid="stMarkdownContainer"] p {
+        font-size: 0.9em; /* Make the file uploader text smaller */
+    }
+
+
+    /* --- File Preview Icons (in the expander for queued files and attached files in chat) --- */
+    /* This targets img tags created by st.image, often used for thumbnails */
+    div[data-testid="stImage"] img {
+        max-width: 40px !important; /* Smaller size for queued/displayed file icons */
+        max-height: 40px !important;
+        object-fit: contain; /* Ensure image fits without distortion */
+        border-radius: 4px; /* Soften corners for images */
+        vertical-align: middle; /* Align with text if in a line */
+    }
+
+    /* Specific adjustment for images *inside* chat messages (history and current user prompt) */
+    .stChatMessage div[data-testid="stChatMessageContent"] img {
+        max-width: 80px !important; /* Cap width for images in chat history bubble */
+        height: auto; /* Maintain aspect ratio */
+        border-radius: 4px;
+        margin-right: 5px; /* Small spacing for images */
+        vertical-align: middle;
+    }
+
+    /* For unicode characters like 📄 (document icon) or 🔗 (link icon) used inline in markdown for files */
+    .stChatMessage div[data-testid="stChatMessageContent"] p {
+        font-size: 0.95em; /* Slightly smaller text for markdown content in chat, affects inline icons */
+        line-height: 1.4; /* Adjust line height for readability */
+    }
+    /* Ensure long file names in chat wrap correctly */
+    .stChatMessage div[data-testid="stChatMessageContent"] a {
+        word-break: break-word; /* Prevents overflow for long links/filenames */
+    }
+
+    /* --- General Chat Message Spacing --- */
+    /* Adjust padding for the entire chat message container */
+    .stChatMessage {
+        padding-bottom: 0.5rem; /* Reduce vertical space between messages */
+    }
+    /* Adjust padding for the actual content area within a chat message */
+    .stChatMessage div[data-testid="stChatMessageContent"] {
+        padding: 0.5rem 0.8rem; /* Reduce internal padding for denser content */
+    }
+
+    /* Adjust login screen header logo if it appears too large */
+    /* This targets the img within a div that might be common for images */
+    /* This is a general rule, consider adding a more specific class if it affects other images unintentionally */
+    .stApp > header + div > div:first-child > div:first-child > div > img {
+        max-width: 250px; /* Limit the max width of the header logo */
+        height: auto;
+    }
+
     </style>
     """, unsafe_allow_html=True
 )
+
+# --- LOAD ENVIRONMENT VARIABLES ---
+load_dotenv()
 
 # --- LOAD ENVIRONMENT VARIABLES ---
 load_dotenv()
@@ -75,37 +173,55 @@ def login_screen():
 
 def _convert_messages_to_dict(messages) -> list[dict]:
     """
-    Converts LangChain message BaseMessage objects to a list of dicts for display.
-    Handles multimodal content by focusing on its string representation.
+    Converts LangChain BaseMessage objects to a list of dicts for display.
+    Handles multimodal content by generating HTML for files/images for display within markdown.
     """
     display_messages = []
     for msg in messages:
         role = "user" if isinstance(msg, HumanMessage) else "assistant"
         content = msg.content
+        formatted_content_parts = []
 
         if isinstance(content, list):
-            # If content is a list (e.g., from a past multimodal message)
-            # This logic should generally not be hit if history is text-only.
-            # But robust for multimodal content if stored directly this way.
-            display_parts = []
+            # This is a multimodal message (text + potentially file metadata dictionaries)
             for part in content:
                 if isinstance(part, str):
-                    display_parts.append(part)
-                elif isinstance(part, dict):  # Assuming dicts represent processed file info
+                    formatted_content_parts.append(part) # Add text directly
+                elif isinstance(part, dict):
+                    # This is assumed to be a processed_file_metadata dict (e.g., {"name":..., "mime_type":..., "display_url":...})
                     if part.get("mime_type", '').startswith("image/") and part.get("display_url"):
-                        display_parts.append(f"*(Image: [{part.get('name', 'file')}]({part['display_url']}))*")
+                        formatted_content_parts.append(
+                            f'<div style="text-align: left; margin-top: 10px; display: flex; align-items: center; gap: 10px;">'
+                            f'<img src="{part["display_url"]}" style="max-width: 100px; border-radius: 8px; object-fit: contain;"/>'
+                            f'<p style="font-size: 0.9em; margin: 0; word-wrap: break-word;">{part.get("name", "Image")}</p>'
+                            f'</div>'
+                        )
                     elif part.get("mime_type", '') == "application/pdf" and part.get("display_url"):
-                        display_parts.append(f"*(PDF: [{part.get('name', 'file')}]({part['display_url']}))*")
-                    elif part.get("gcs_uri"):
-                        display_parts.append(
-                            f"*(File: [{part.get('name', 'file')}]({part.get('display_url', part['gcs_uri'])}))*")
+                        formatted_content_parts.append(
+                            f'<div style="text-align: left; margin-top: 10px; display: flex; align-items: center; gap: 10px;">'
+                            f'<a href="{part["display_url"]}" target="_blank" style="text-decoration: none;">'
+                            f'<img src="https://upload.wikimedia.org/wikipedia/commons/8/87/PDF_file_icon.svg" style="width: 60px; height: 60px; object-fit: contain;"/>'
+                            f'</a>'
+                            f'<p style="font-size: 0.9em; margin: 0; word-wrap: break-word;">PDF: <a href="{part["display_url"]}" target="_blank">{part.get("name", "Document")}</a></p>'
+                            f'</div>'
+                        )
+                    elif part.get("display_url"): # For other file types with a display URL
+                        formatted_content_parts.append(
+                            f'<div style="text-align: left; margin-top: 10px; display: flex; align-items: center; gap: 10px;">'
+                            f'<a href="{part["display_url"]}" target="_blank" style="text-decoration: none;">'
+                            f'<img src="https://cdn-icons-png.flaticon.com/512/3796/3796062.png" style="width: 60px; height: 60px; object-fit: contain;"/>' # Generic file icon
+                            f'</a>'
+                            f'<p style="font-size: 0.9em; margin: 0; word-wrap: break-word;">File: <a href="{part["display_url"]}" target="_blank">{part.get("name", "Document")}</a></p>'
+                            f'</div>'
+                        )
                     else:
-                        display_parts.append(f"*(Complex content: {part.get('name', 'unknown')})*")
+                        formatted_content_parts.append(f"*(File: {part.get('name', 'Unknown file')}, no display link)*")
                 else:
-                    display_parts.append(f"*(Unknown content type)*")
-            display_content_str = " ".join(display_parts)
+                    formatted_content_parts.append(f"*(Unrecognized content part: {type(part)})*")
+            # Join all parts. st.markdown will render the HTML.
+            display_content_str = "".join(formatted_content_parts)
         else:
-            # Simple string content
+            # Simple string content (typically AI messages or old plain user messages)
             display_content_str = content
 
         display_messages.append({"role": role, "content": display_content_str})
@@ -120,8 +236,7 @@ def new_chat_session():
     st.session_state.current_session_id = session_id
     st.session_state.current_session_topic = "New Chat"
     st.session_state.messages = []
-    st.session_state.processing_prompt_and_file = {"prompt": None, "files": []}
-    st.session_state.uploaded_files_queue = []  # Ensure queue is empty
+    st.session_state["uploader_key"] = str(uuid.uuid4())  # Unique key for file uploader to reset state
     update_all_sessions()
 
 
@@ -132,10 +247,8 @@ def load_chat_session(session_data):
     # Assuming lc_memory_module's get_chat_history returns LangChain messages
     history = lc_memory_module.get_chat_history(session_data["session_id"])
     st.session_state.messages = _convert_messages_to_dict(history.messages)  # Convert for display
-
     # Clear any pending processing state from previous interaction that might be left
-    st.session_state.processing_prompt_and_file = {"prompt": None, "files": []}
-    st.session_state.uploaded_files_queue = []  # Ensure queue is empty
+    st.session_state["uploader_key"] = str(uuid.uuid4())  # Reset uploader key to a new unique value
     st.rerun()
 
 
@@ -143,9 +256,18 @@ def delete_chat_session(session_id: str):
     """Deletes a chat session and its history, then reloads the UI."""
     if sm.delete_session_db(session_id):
         st.success("Chat session deleted.")
-        st.session_state.current_session_id = None
-        update_all_sessions()
-        st.rerun()
+        # Reset current session if it was the one deleted
+        if st.session_state.current_session_id == session_id:
+            st.session_state.current_session_id = None
+            # Attempt to load first session, or create a new one
+            update_all_sessions()
+            if st.session_state.all_sessions:
+                load_chat_session(st.session_state.all_sessions[0])
+            else:
+                new_chat_session()
+        else:
+            update_all_sessions() # Update list without changing current session
+            st.rerun() # Rerun to update sidebar
     else:
         st.error("Failed to delete chat session.")
 
@@ -159,7 +281,6 @@ def update_all_sessions():
 def _process_uploaded_file_for_gcs(uploaded_file: st.runtime.uploaded_file_manager.UploadedFile, user_name: str):
     """
     Upload file to GCS and return its processed metadata (GCS URI, display URL etc.).
-    This function specifically handles the GCS upload part.
     """
     gcs_uri, display_url = upload_file_to_gcs(uploaded_file, user_name)  # Pass bucket name
     if gcs_uri and display_url:
@@ -180,19 +301,18 @@ def _display_queued_file_preview(file_obj: st.runtime.uploaded_file_manager.Uplo
     col_icon, col_name, col_remove = st.columns([0.1, 0.8, 0.1])
     with col_icon:
         if file_obj.type and file_obj.type.startswith('image/'):
-            # Read file content for local display, then reset pointer
-            file_obj.seek(0)  # Ensure cursor is at beginning
+            file_obj.seek(0)
             image = Image.open(file_obj)
-            st.image(image, width=50)  # Small thumbnail
-            file_obj.seek(0)  # Reset cursor again for actual upload later
+            st.image(image, width=50)
+            file_obj.seek(0)
         elif file_obj.type == "application/pdf":
-            st.image("https://upload.wikimedia.org/wikipedia/commons/8/87/PDF_file_icon.svg", width=50, caption="PDF")  # Generic PDF icon placeholder
+            st.image("https://upload.wikimedia.org/wikipedia/commons/8/87/PDF_file_icon.svg", width=50, caption="PDF")
         elif file_obj.type == "text/plain":
             st.image(
                 "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a4/Text-x-generic.svg/200px-Text-x-generic.svg.png",
-                width=50, caption="TXT")  # Generic TXT icon placeholder
+                width=50, caption="TXT")
         else:
-            st.image("https://cdn-icons-png.flaticon.com/512/3796/3796062.png", width=50)  # Generic file icon
+            st.image("https://cdn-icons-png.flaticon.com/512/3796/3796062.png", width=50) # Generic file icon
     with col_name:
         st.markdown(f"**{file_obj.name}**")
         st.caption(f"{file_obj.type} - {file_obj.size / 1024:.1f} KB")
@@ -200,19 +320,17 @@ def _display_queued_file_preview(file_obj: st.runtime.uploaded_file_manager.Uplo
         if st.button("x", key=f"remove_file_{idx}", help="Remove this file"):
             st.session_state.uploaded_files_queue.pop(idx)
             st.rerun()
-
-
 # ----------------------------------
 # --- MAIN APPLICATION LOGIC ---
 # ----------------------------------
 
-# Use the built-in Streamlit authentication to gate the app
+# Use the built-in Streamlit authentication to gate the app.
+# Note: For production, replace st.user with actual SSO integration.
 if not st.user.is_logged_in:
     login_screen()
     st.stop()
 
 # --- AUTHENTICATED APPLICATION ---
-# This code runs only after a user has successfully logged in.
 
 # Initialize databases once per session
 if 'db_initialized' not in st.session_state:
@@ -238,7 +356,7 @@ col_title, col_logout = st.columns([4, 1])
 with col_title:
     st.title("LKF GenAI Chat")
 with col_logout:
-    st.write("")  # Spacer
+    st.write("") # Spacer
     st.button("Log out", on_click=st.logout, use_container_width=True)
 
 st.subheader(f"Current Chat: {st.session_state.current_session_topic}")
@@ -246,7 +364,8 @@ st.subheader(f"Current Chat: {st.session_state.current_session_topic}")
 # Display chat messages from history
 for message in st.session_state.get("messages", []):
     with st.chat_message(message["role"]):
-        st.markdown(message["content"])
+        # Crucial: Allow HTML for rendering thumbnails and links in the history
+        st.markdown(message["content"], unsafe_allow_html=True)
 
 # --- SIDEBAR ---
 with st.sidebar:
@@ -271,7 +390,6 @@ with st.sidebar:
                              type="primary" if is_current else "secondary", use_container_width=True):
                     load_chat_session(session)
             with col_delete:
-                # Using st.session_state to manage deletion confirmation
                 if st.button("🗑️", key=f"delete_{session['session_id']}", help=f"Delete '{display_topic}'"):
                     st.session_state[f"confirm_delete_{session['session_id']}"] = True
 
@@ -282,7 +400,7 @@ with st.sidebar:
                     delete_chat_session(session['session_id'])  # Deletes and reruns
                 if col_no.button("No", key=f"confirm_no_{session['session_id']}", use_container_width=True):
                     st.session_state[f"confirm_delete_{session['session_id']}"] = False
-                    st.rerun()  # Rerun to hide confirmation
+                    st.rerun() # Rerun to hide confirmation
     else:
         st.info("No past chats yet.")
 
@@ -298,66 +416,36 @@ if selected_category:
         grounding_source = st.checkbox("Enable Grounding Source: Google Search")
 
     # --- File Upload Section ---
-    st.markdown("---")  # Visual separator
-    with st.expander("Upload Documents/Images for Context", expanded=True):  # Expanded by default for visibility
+    st.markdown("---") # Visual separator
+    with st.expander("Upload Documents/Images for Context", expanded=True):
         # Allow multiple files to be uploaded
         uploaded_files = st.file_uploader(
             "Choose files...",
             type=["jpg", "jpeg", "png", "webp", "pdf", "txt"],
-            accept_multiple_files=True,
-            key="multi_file_uploader_main"  # Unique key
+            accept_multiple_files=True,  # Allow multiple files
+            key=st.session_state['uploader_key'],
+            label_visibility="collapsed"
         )
-
-        # Add new uploaded files to the queue if they are not already there
-        if uploaded_files:
-            current_queue_names = {f.name for f in st.session_state.uploaded_files_queue}
-            for file in uploaded_files:
-                if file.name not in current_queue_names:  # Simple check to avoid duplicates on rerun
-                    st.session_state.uploaded_files_queue.append(file)
-                    current_queue_names.add(file.name)  # Add to set to prevent immediate re-add
-
-        # Display files currently in the queue with thumbnails/previews
-        if st.session_state.uploaded_files_queue:
-            st.write("--- Files ready for submission ---")
-            for idx, file in enumerate(st.session_state.uploaded_files_queue):
-                _display_queued_file_preview(file, idx)  # Call the new preview function
-
-            if st.button("Clear all selected files", key="clear_all_files", use_container_width=True):
-                st.session_state.uploaded_files_queue = []
-                st.rerun()
 
     # --- Text Chat Input (Submission Trigger) ---
     user_text_prompt = st.chat_input("Say something")
 
-    if user_text_prompt:  # The entire prompt submission logic starts here
-
-        # Store the current input (text and files) into a dedicated processing state
-        st.session_state.processing_prompt_and_file = {
-            "prompt": user_text_prompt,
-            "files": st.session_state.uploaded_files_queue  # Get all files currently in queue
-        }
-        st.session_state.uploaded_files_queue = []
-
-        # --- EXECUTE PROCESSING ---
-        current_input_data_for_llm = st.session_state.processing_prompt_and_file
-        current_text_prompt_for_llm = current_input_data_for_llm["prompt"]
-        raw_files_for_llm = current_input_data_for_llm["files"]
-
-        processed_file_metadata = []  # This will store GCS URIs, display URLs, etc.
-
+    if user_text_prompt: # The entire prompt submission logic starts here
+        processed_file_metadata = [] # To store GCS URIs, display URLs, etc.
         # Process and upload files to GCS at submission time
-        if raw_files_for_llm:
+        if uploaded_files:
             with st.spinner("Uploading files to Cloud Storage..."):
-                for file_obj in raw_files_for_llm:
+                for file_obj in uploaded_files:
                     processed_content = _process_uploaded_file_for_gcs(file_obj, st.user.name)
                     if processed_content and "error" not in processed_content:
                         processed_file_metadata.append(processed_content)
                     else:
                         st.error(f"Skipping file '{file_obj.name}' due to processing/upload error.")
 
+        # --- Display the user's current input and files in current chat bubble ---
         with st.chat_message("user"):
-            if current_text_prompt_for_llm:
-                st.markdown(current_text_prompt_for_llm)
+            if user_text_prompt:
+                st.markdown(user_text_prompt)
 
             if processed_file_metadata:
                 st.markdown("---")
@@ -374,70 +462,85 @@ if selected_category:
                         else:
                             st.markdown(f"🔗 {file_meta['name']}")
 
-        # Handle topic generation for new chats
+        # --- Prepare the full user message content for storage in history_manager ---
+        final_human_message_content_parts = []
+        if user_text_prompt:
+            final_human_message_content_parts.append(user_text_prompt)
+
+        # Add processed file metadata directly to the content list of the HumanMessage
+        for file_meta in processed_file_metadata:
+            final_human_message_content_parts.append(file_meta)
+
+        # Get the current history manager to add the new message
         history_manager = lc_memory_module.get_chat_history(st.session_state.current_session_id)
-        is_first_message_in_new_chat = not history_manager.messages  # Check if history is genuinely empty in DB
-
-        if is_first_message_in_new_chat:
-            with st.spinner("Generating chat topic..."):
-                topic_text_for_generation = current_text_prompt_for_llm if current_text_prompt_for_llm else f"New chat with file(s)"
-                if selected_category == "Gemini":
-                    topic = gemini_module.generate_topic_from_text(selected_model_id, topic_text_for_generation)
-                elif selected_category == "OpenAI":
-                    topic = openai_module.generate_topic_from_text(selected_model_id, topic_text_for_generation)
-                else:
-                    topic = "Untitled Chat"  # Fallback
-
-                if topic and topic != "Untitled Conversation":  # "Untitled Conversation" is often a default fallback
-                    sm.update_session_topic_db(st.session_state.current_session_id, topic)
-                    st.session_state.current_session_topic = topic
-                    update_all_sessions()
-
-        # New approach: store combined content for history
-        full_user_message_content = []
-        if current_text_prompt_for_llm:
-            history_manager.add_user_message(HumanMessage(content=current_text_prompt_for_llm))
-
-        # history_manager.add_user_message(HumanMessage(content=full_user_message_content))
 
         # Check if there's *anything* meaningful to send to the LLM (text XOR files).
-        if not (current_text_prompt_for_llm or processed_file_metadata):
+        if not final_human_message_content_parts:
             st.warning("No text or supported file content to send to LLM. Please provide a prompt or valid file.")
             # Clear state and rerun for a clean UI
             del st.session_state['processing_prompt_and_file']
+            # Re-fetch messages to ensure the display reflects only previous state
             st.session_state.messages = _convert_messages_to_dict(history_manager.messages)
             st.rerun()
 
+        # Add the full user message (text + file metadata) to the chat history
+        history_manager.add_user_message(HumanMessage(content=final_human_message_content_parts))
+
+        # Handle topic generation for new chats
+        # Check if this is the very first message after creating a new chat session
+        # A simple check: if history contains only 1 message (the one just added by user)
+        if len(history_manager.messages) == 1:
+            with st.spinner("Generating chat topic..."):
+                topic_text_for_generation = user_text_prompt if user_text_prompt else f"New chat with file(s)"
+                if selected_category == "Gemini":
+                    topic = gemini_module.generate_topic_from_text(selected_model_id, topic_text_for_generation)
+                elif selected_category == "OpenAI":
+                    # Assume openai_module also has generate_topic_from_text
+                    topic = openai_module.generate_topic_from_text(selected_model_id, topic_text_for_generation)
+                else:
+                    topic = "Untitled Chat" # Fallback
+
+                if topic and topic != "Untitled Conversation": # "Untitled Conversation" is often a default fallback
+                    sm.update_session_topic_db(st.session_state.current_session_id, topic)
+                    st.session_state.current_session_topic = topic
+                    update_all_sessions() # Refresh sidebar topics
+
         with st.spinner(f"Getting response from {selected_model_name}..."):
-            assistant_content_generator = None # Initialize to None for clarity
+            assistant_content_generator = None
             # Pass processed_file_metadata containing GCS URIs, display URLs etc.
+            # The `generate_response` functions in modules should be able to handle
+            # LangChain BaseMessage objects (which might have list content now) for history
+            # and the separate `processed_files` for new file inputs for the LLM.
             if selected_category == "Gemini":
                 assistant_content_generator = gemini_module.generate_response(
                     selected_model_id,
-                    history_manager.messages,  # History will now contain text + file metadata for display
-                    processed_files=processed_file_metadata,  # Files passed separately for LLM processing
+                    history_manager.messages,  # History now contains text + file metadata
                     grounding_source=grounding_source
                 )
             elif selected_category == "OpenAI":
                 assistant_content_generator = openai_module.generate_response(
-                    # Ensure this function also accepts processed_files
                     selected_model_id,
-                    history_manager.messages,
-                    processed_files=processed_file_metadata
+                    history_manager.messages, # History now contains text + file metadata
                 )
             else:
                 st.warning(f"Response generation not implemented for {selected_category} models.")
-                assistant_content = "Sorry, this model category is not yet supported for responses."
+                # Fallback display for unsupported models
+                with st.chat_message("assistant"):
+                    st.write("Sorry, this model category is not yet supported for responses.")
+                assistant_content_generator = None # Ensure it's None to avoid subsequent error
 
             if assistant_content_generator:
                 with st.chat_message("assistant"):
+                    # st.write_stream displays the content incrementally and returns the full string
                     full_response_text = st.write_stream(assistant_content_generator)
-                    # st.markdown(assistant_content)
                 history_manager.add_ai_message(full_response_text)
             else:
-                st.error("The model did not return a response.")
+                st.error("The model did not return a response or an error occurred during generation.")
 
-        # Clear processing state and refresh UI
-        del st.session_state['processing_prompt_and_file']
-        st.session_state.messages = _convert_messages_to_dict(history_manager.messages)
-        st.rerun()  # Final rerun to update chat UI
+        # del st.session_state['processing_prompt_and_file']
+        st.session_state["uploader_key"] = str(uuid.uuid4())  # Reset uploader key to a new unique value
+        st.session_state.messages = _convert_messages_to_dict(
+            lc_memory_module.get_chat_history(st.session_state.current_session_id).messages
+        )
+        st.session_state.clear()
+        st.rerun() # Final rerun to update chat UI with AI response and clear inputx/

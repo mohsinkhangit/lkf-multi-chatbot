@@ -29,7 +29,7 @@ client = AzureOpenAI(
 )
 
 
-def generate_response(model_id: str, history_messages: list, processed_files: list = [],
+def generate_response(model_id: str, history_messages: list,
                       grounding_source: bool = False) -> str:
     """
     Generates a response from a Gemini model using LangChain message objects.
@@ -49,46 +49,31 @@ def generate_response(model_id: str, history_messages: list, processed_files: li
     messages = []
     trimmed_messages = trim_messages(
         history_messages,
-        # Keep the last <= n_count tokens of the messages.
         strategy="last",
-        # Remember to adjust based on your model
-        # or else pass a custom token_counter
         token_counter=count_tokens_approximately,
-        # Most chat models expect that chat history starts with either:
-        # (1) a HumanMessage or
-        # (2) a SystemMessage followed by a HumanMessage
-        # Remember to adjust based on the desired conversation
-        # length
         max_tokens=context_limit,
-        # Most chat models expect that chat history starts with either:
-        # (1) a HumanMessage or
-        # (2) a SystemMessage followed by a HumanMessage
         start_on="human",
-        # Most chat models expect that chat history ends with either:
-        # (1) a HumanMessage or
-        # (2) a ToolMessage
-        end_on=("human"),
-        # Usually, we want to keep the SystemMessage
-        # if it's present in the original history.
-        # The SystemMessage has special instructions for the model.
+        end_on="human",
         include_system=True,
         allow_partial=False,
     )
     for message in trimmed_messages:
-        # Determine the role based on the message object's type
         if isinstance(message, HumanMessage):
-            messages.append({
-                "role": 'user',
-                "content": message.content
-            })
+            role = "user"
+            # Handle multimodal content in HumanMessage.content
+            if isinstance(message.content, list):
+                for part in message.content:
+                    if isinstance(part, str):
+                        messages.append({
+                            "role": role,
+                            "content": part
+                        })
+                    #TODO: Handle other content types like files or images
         elif isinstance(message, AIMessage):
             messages.append({
                 "role": "assistant",
                 "content": message.content
             })
-        else:
-            # Skip unsupported message types to avoid errors
-            continue
     try:
         response_stream = client.chat.completions.create(
             messages=messages,
