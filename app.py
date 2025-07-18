@@ -29,100 +29,6 @@ st.markdown(
     .stAppDeployButton { visibility: hidden; }
     .stAppToolbar { visibility: hidden; }
 
-    /* --- General Font Size and Spacing Adjustments --- */
-    /* You can adjust the base font size for the whole app if desired */
-    html, body, .stApp {
-        font-size: 15px; /* Slightly smaller base font size for better density */
-    }
-
-    /* Global line height for better readability if font size changed */
-    p {
-        line-height: 1.5;
-    }
-
-    /* --- Buttons: Affects "New Chat", "Log out", "Delete" (trash can) etc. --- */
-    /* Target the actual button element within Streamlit's button container */
-    .stButton > button {
-        font-size: 0.9em; /* Make button text/icons slightly smaller */
-        padding: 0.4em 0.8em; /* Adjust padding for smaller buttons */
-        line-height: 1.2; /* Tighter line spacing for button content */
-    }
-
-    /* --- Streamlit Option Menu in Sidebar ("Gemini", "OpenAI") --- */
-    /* Target the nav-link div for overall item appearance */
-    .css-1fpy3qf.eql387c3 div.nav-link { /* This class is often used for nav-link. Inspect if it changes. */
-        font-size: 0.95em; /* Adjust font size of menu item text */
-        padding: 0.5em 1em; /* Adjust padding for menu items */
-    }
-    /* Target the icon part within option menu items (e.g., "✨", "🤖"). */
-    /* These are commonly SVG or spans that are first children of a div within .nav-link */
-    .nav-link > div > svg, /* For cases where icons are SVG */
-    .nav-link > div > span:first-child { /* For unicode icons or spans */
-        font-size: 1.1em; /* Make the actual icons in the menu slightly smaller relative to text */
-        margin-right: 0.5em; /* Adjust space between icon and text */
-        vertical-align: middle; /* Align icon vertically with text */
-    }
-
-    /* --- File Uploader Widget Icons --- */
-    /* Target the main cloud upload icon within the st.file_uploader area */
-    .stFileUploader svg { /* This targets SVGs inside the file uploader */
-        width: 25px; /* Adjust the main upload icon size */
-        height: 25px;
-        fill: grey; /* Optional: adjust icon color */
-    }
-    /* Target the text indicating "Drag and drop file here or Browse files" */
-    .stFileUploader span[data-testid="stMarkdownContainer"] p {
-        font-size: 0.9em; /* Make the file uploader text smaller */
-    }
-
-
-    /* --- File Preview Icons (in the expander for queued files and attached files in chat) --- */
-    /* This targets img tags created by st.image, often used for thumbnails */
-    div[data-testid="stImage"] img {
-        max-width: 40px !important; /* Smaller size for queued/displayed file icons */
-        max-height: 40px !important;
-        object-fit: contain; /* Ensure image fits without distortion */
-        border-radius: 4px; /* Soften corners for images */
-        vertical-align: middle; /* Align with text if in a line */
-    }
-
-    /* Specific adjustment for images *inside* chat messages (history and current user prompt) */
-    .stChatMessage div[data-testid="stChatMessageContent"] img {
-        max-width: 80px !important; /* Cap width for images in chat history bubble */
-        height: auto; /* Maintain aspect ratio */
-        border-radius: 4px;
-        margin-right: 5px; /* Small spacing for images */
-        vertical-align: middle;
-    }
-
-    /* For unicode characters like 📄 (document icon) or 🔗 (link icon) used inline in markdown for files */
-    .stChatMessage div[data-testid="stChatMessageContent"] p {
-        font-size: 0.95em; /* Slightly smaller text for markdown content in chat, affects inline icons */
-        line-height: 1.4; /* Adjust line height for readability */
-    }
-    /* Ensure long file names in chat wrap correctly */
-    .stChatMessage div[data-testid="stChatMessageContent"] a {
-        word-break: break-word; /* Prevents overflow for long links/filenames */
-    }
-
-    /* --- General Chat Message Spacing --- */
-    /* Adjust padding for the entire chat message container */
-    .stChatMessage {
-        padding-bottom: 0.5rem; /* Reduce vertical space between messages */
-    }
-    /* Adjust padding for the actual content area within a chat message */
-    .stChatMessage div[data-testid="stChatMessageContent"] {
-        padding: 0.5rem 0.8rem; /* Reduce internal padding for denser content */
-    }
-
-    /* Adjust login screen header logo if it appears too large */
-    /* This targets the img within a div that might be common for images */
-    /* This is a general rule, consider adding a more specific class if it affects other images unintentionally */
-    .stApp > header + div > div:first-child > div:first-child > div > img {
-        max-width: 250px; /* Limit the max width of the header logo */
-        height: auto;
-    }
-
     </style>
     """, unsafe_allow_html=True
 )
@@ -417,14 +323,13 @@ if selected_category:
 
     # --- File Upload Section ---
     st.markdown("---") # Visual separator
-    with st.expander("Upload Documents/Images for Context", expanded=True):
+    with st.expander("Upload Documents/Images for Context"):
         # Allow multiple files to be uploaded
         uploaded_files = st.file_uploader(
             "Choose files...",
             type=["jpg", "jpeg", "png", "webp", "pdf", "txt"],
             accept_multiple_files=True,  # Allow multiple files
-            key=st.session_state['uploader_key'],
-            label_visibility="collapsed"
+            key=st.session_state['uploader_key']
         )
 
     # --- Text Chat Input (Submission Trigger) ---

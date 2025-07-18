@@ -55,7 +55,7 @@ def upload_file_to_gcs(uploaded_file, username):
         blob.upload_from_file(uploaded_file)
 
         # Construct the Google Cloud Storage URI
-        gcs_uri = f"gs://{GCS_BUCKET_NAME}/{uploaded_file.name}"
+        gcs_uri = f"gs://{GCS_BUCKET_NAME}/{username}/{uploaded_file.name}"
 
         # Generate a temporary, time-limited signed URL for viewing the object.
         # This is recommended for private buckets, allowing temporary access.
